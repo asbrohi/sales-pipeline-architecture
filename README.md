@@ -68,3 +68,6 @@ This project implements an automated Extract, Transform, Load (ETL) pipeline to 
 
 ## Contact
 For questions or contributions, contact [Your Name/Email] (update with your details).
+
+![sales pipeline architecture](https://github.com/user-attachments/assets/48a2ba05-0e20-434f-a136-d46874a8b7b6)
+
