@@ -1,0 +1,98 @@
+USE WAREHOUSE COMPUTE_WH;  -- Replace with your chosen warehouse name
+-- creating database and schema
+CREATE DATABASE IF NOT EXISTS sales_db;
+CREATE SCHEMA IF NOT EXISTS sales_schema;
+USE SCHEMA sales_db.sales_schema;
+
+CREATE TABLE IF NOT EXISTS sales (
+    transaction_id INT,
+    product_id INT,
+    quantity INT,
+    price FLOAT,
+    region STRING,
+    timestamp STRING,
+    processed BOOLEAN
+);
+
+-- Integration 
+USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE COMPUTE_WH;
+
+CREATE STORAGE INTEGRATION s3_sales_integration
+    TYPE = EXTERNAL_STAGE
+    STORAGE_PROVIDER = S3
+    STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::006043185824:role/SnowflakeS3AccessRole'  
+    ENABLED = TRUE
+    STORAGE_ALLOWED_LOCATIONS = ('s3://sales-data-bucket-asattar/transformed/')
+    ;
+
+DESC STORAGE INTEGRATION s3_sales_integration;
+
+USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE COMPUTE_WH;
+USE SCHEMA sales_db.sales_schema;
+
+CREATE STAGE IF NOT EXISTS sales_stage
+URL = 's3://sales-data-bucket-asattar/transformed/'
+STORAGE_INTEGRATION = s3_sales_integration;
+
+LIST @sales_stage;
+
+SHOW PIPES;
+
+CREATE PIPE IF NOT EXISTS sales_pipe
+    AUTO_INGEST = FALSE
+    AS
+    COPY INTO sales
+    FROM @sales_stage
+    FILE_FORMAT = (TYPE = 'JSON' STRIP_OUTER_ARRAY = TRUE)
+    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE;
+
+ALTER PIPE sales_pipe REFRESH;
+
+
+USE DATABASE SALES_DB;
+USE SCHEMA SALES_SCHEMA;
+
+CREATE STAGE IF NOT EXISTS sales_stage;
+CREATE OR REPLACE PIPE SALES_DB.SALES_SCHEMA.SALES_PIPE
+AUTO_INGEST=FALSE
+AS
+COPY INTO sales
+FROM @sales_stage
+FILE_FORMAT = (TYPE = 'JSON' STRIP_OUTER_ARRAY = TRUE)
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE;
+SHOW PIPES;
+
+DESC TABLE sales;
+
+ALTER PIPE SALES_DB.SALES_SCHEMA.SALES_PIPE REFRESH;
+
+SELECT SYSTEM$PIPE_STATUS('SALES_DB.SALES_SCHEMA.SALES_PIPE');
+
+SELECT COUNT(*) FROM SALES_SCHEMA.sales;
+
+
+SELECT REGION, 
+       SUM(PRICE * QUANTITY) AS total_sales_value, 
+       SUM(QUANTITY) AS total_quantity
+FROM sales
+GROUP BY REGION
+ORDER BY total_sales_value DESC;
+
+
+SELECT 
+    COUNT(*) AS total_rows,
+    COUNT(CASE WHEN PRODUCT_ID IS NULL THEN 1 END) AS null_product_id,
+    COUNT(CASE WHEN QUANTITY IS NULL THEN 1 END) AS null_quantity,
+    COUNT(CASE WHEN PRICE IS NULL THEN 1 END) AS null_price,
+    COUNT(CASE WHEN REGION IS NULL THEN 1 END) AS null_region,
+    COUNT(CASE WHEN TIMESTAMP IS NULL THEN 1 END) AS null_timestamp
+FROM sales;
+
+SELECT PRODUCT_ID, 
+       SUM(PRICE * QUANTITY) AS total_revenue
+FROM sales
+GROUP BY PRODUCT_ID
+ORDER BY total_revenue DESC
+LIMIT 10;
